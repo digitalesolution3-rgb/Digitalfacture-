@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>DigitalFacture Pro</title>
+    <meta name="description" content="DigitalFacture Pro — Facturation SaaS pour commerces du Burkina Faso">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="css/style.css">
+    <!-- Config visuelle uniquement — PLUS de PINs ni de clés secrètes -->
+    <script src="config.js"></script>
+    <!-- Supabase SDK doit être AVANT supabase_client.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen font-sans antialiased">
+
+<!-- LOADING SCREEN -->
+<div id="loadingScreen" class="fixed inset-0 bg-slate-900 z-[100] flex items-center justify-center">
+    <div class="text-center">
+        <div class="text-5xl mb-4 animate-pulse">⚡</div>
+        <h1 class="text-2xl font-black text-white mb-2">Digital<span class="text-amber-400">Facture</span> <span class="text-sky-400">Pro</span></h1>
+        <div id="loadingMessage" class="text-white/60 text-sm mt-2">Vérification abonnement...</div>
+    </div>
+</div>
+
+<!-- BLOCAGE ABONNEMENT -->
+<div id="licenceBlockModal" class="hidden fixed inset-0 bg-slate-950 z-[90] flex items-center justify-center p-4">
+    <div class="bg-slate-900 rounded-2xl p-6 w-full max-w-sm border border-red-900 shadow-2xl">
+        <div class="text-center mb-4">
+            <div id="licenceBlockIcon" class="text-5xl mb-3">🚫</div>
+            <h3 id="licenceBlockTitre" class="font-black text-white text-xl">Accès bloqué</h3>
+            <p id="licenceBlockMessage" class="text-slate-400 text-sm mt-2"></p>
+        </div>
+        <div class="bg-slate-800 rounded-xl p-3 text-center mb-3">
+            <p class="text-slate-400 text-xs">Contactez votre administrateur</p>
+            <p class="text-amber-400 font-black text-sm mt-1">DigitalFacture Pro</p>
+        </div>
+        <button onclick="ouvrirModalRenouvellement()"
+                class="w-full bg-amber-600 hover:bg-amber-500 text-white font-bold py-2 rounded-xl text-sm transition-colors">
+            🔄 Renouveler l'abonnement
+        </button>
+    </div>
+</div>
+
+<!-- APPLICATION -->
+<div id="appContainer" class="hidden min-h-screen bg-gray-100">
+
+    <!-- HEADER -->
+    <div class="bg-slate-900 text-white p-3 sticky top-0 z-30 shadow-xl">
+        <div class="flex justify-between items-center max-w-[80mm] mx-auto">
+            <div onclick="accesDeveloppeur()" class="cursor-pointer select-none">
+                <h1 id="displayNom" class="text-sm font-black uppercase tracking-tighter leading-none"></h1>
+                <p id="displayActivite" class="text-[8px] text-amber-400 font-bold mt-0.5"></p>
+            </div>
+            <div class="flex items-center gap-2">
+                <div id="utilisateursEnLigne" title="Synchronisation cloud"></div>
+                <button onclick="ouvrirPanelProprietaire()"
+                        class="bg-amber-700 hover:bg-amber-600 text-white text-[10px] px-2 py-1 rounded-full font-black transition-colors" title="Propriétaire">👑</button>
+                <button onclick="deconnexion()"
+                        class="bg-red-700 hover:bg-red-600 text-white text-[10px] px-2 py-1 rounded-full font-black transition-colors" title="Déconnexion">⏏</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CONNEXION PIN -->
+    <div id="loginCaisseModal" class="fixed inset-0 bg-black/90 z-20 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl">
+            <div class="text-center mb-4">
+                <div class="text-4xl mb-2">🔐</div>
+                <h3 class="font-black text-xl">CONNEXION CAISSE</h3>
+                <p id="nomEtablissementLogin" class="text-xs text-gray-500 mt-1"></p>
+            </div>
+            <input type="password" id="pinInput" maxlength="6" autocomplete="off" inputmode="numeric"
+                   class="w-full border-4 border-amber-500 text-3xl text-center p-3 rounded-xl mb-4 tracking-[0.5em] outline-none"
+                   placeholder="••••">
+            <button onclick="connexionCaissier()"
+                    class="w-full bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-black py-3 rounded-xl text-lg transition-all">
+                VALIDER
+            </button>
+            <p class="text-[10px] text-gray-400 text-center mt-3">Code PIN caissier (4 à 6 chiffres)</p>
+        </div>
+    </div>
+
+    <!-- PANEL PROPRIÉTAIRE -->
+    <div id="ownerPanel" class="hidden fixed inset-0 bg-slate-950 z-40 overflow-y-auto">
+        <div class="max-w-xl mx-auto p-4">
+            <div class="flex justify-between items-center mb-5 sticky top-0 bg-slate-950 py-2 z-10">
+                <h2 class="text-white font-black text-lg">⚙️ Gestion Établissement</h2>
+                <button onclick="document.getElementById('ownerPanel').classList.add('hidden')"
+                        class="bg-red-700 text-white px-3 py-1 rounded-full text-xs font-black">✕ Fermer</button>
+            </div>
+
+            <!-- Stats -->
+            <div class="grid grid-cols-3 gap-2 mb-4">
+                <div class="bg-slate-900 p-3 rounded-xl text-center">
+                    <p class="text-[8px] text-slate-400 uppercase font-bold">Aujourd'hui</p>
+                    <p id="valJour" class="text-green-400 font-black text-sm mt-1">0 F</p>
+                </div>
+                <div class="bg-slate-900 p-3 rounded-xl text-center">
+                    <p class="text-[8px] text-slate-400 uppercase font-bold">Ce mois</p>
+                    <p id="valMois" class="text-sky-400 font-black text-sm mt-1">0 F</p>
+                </div>
+                <div class="bg-slate-900 p-3 rounded-xl text-center">
+                    <p class="text-[8px] text-slate-400 uppercase font-bold">Cette année</p>
+                    <p id="valAn" class="text-amber-400 font-black text-sm mt-1">0 F</p>
+                </div>
+            </div>
+
+            <!-- Abonnement -->
+            <div class="bg-slate-900 p-4 rounded-xl mb-4">
+                <h3 class="text-white font-black text-sm mb-3">🔑 ABONNEMENT</h3>
+                <div class="text-xs space-y-2">
+                    <div class="flex justify-between"><span class="text-slate-400">Statut :</span><span id="aboStatut" class="text-green-400 font-bold">—</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Plan :</span><span id="aboPlan" class="text-white">—</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Expire le :</span><span id="aboExpiry" class="text-white">—</span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Jours restants :</span><span id="aboJours" class="text-white font-bold">—</span></div>
+                </div>
+                <button onclick="ouvrirModalRenouvellement()"
+                        class="w-full mt-3 bg-amber-700 hover:bg-amber-600 text-white text-xs py-2 rounded-lg font-bold transition-colors">
+                    🔄 Renouveler
+                </button>
+            </div>
+
+            <!-- Infos établissement -->
+            <div class="bg-slate-900 p-4 rounded-xl mb-4">
+                <h3 class="text-white font-black text-sm mb-3">🏢 ÉTABLISSEMENT</h3>
+                <div class="text-xs text-white space-y-2">
+                    <div class="flex justify-between"><span class="text-slate-400">Nom :</span><span id="infoNom" class="font-bold text-right"></span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Activité :</span><span id="infoActivite" class="text-right"></span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Téléphone :</span><span id="infoTel" class="text-right"></span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Adresse :</span><span id="infoAdresse" class="text-right"></span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Ville :</span><span id="infoVille" class="text-right"></span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">Email :</span><span id="infoEmail" class="text-right"></span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">RC :</span><span id="infoRc" class="text-right"></span></div>
+                    <div class="flex justify-between"><span class="text-slate-400">NIF :</span><span id="infoNif" class="text-right"></span></div>
+                </div>
+            </div>
+
+            <!-- Caissiers -->
+            <div class="bg-slate-900 p-4 rounded-xl mb-4">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-white font-black text-sm">👥 CAISSIERS</h3>
+                    <button onclick="ouvrirModalAjoutCaissier()"
+                            class="bg-green-700 hover:bg-green-600 text-white text-[10px] px-3 py-1 rounded-full font-black transition-colors">+ Ajouter</button>
+                </div>
+                <div id="listeCaissiers" class="space-y-2"></div>
+            </div>
+
+            <!-- Historique ventes -->
+            <div class="bg-slate-900 p-4 rounded-xl mb-4">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-white font-black text-sm">📋 HISTORIQUE</h3>
+                    <button onclick="exporterCSV()"
+                            class="bg-green-800 hover:bg-green-700 text-white text-[10px] px-3 py-1 rounded-full font-black transition-colors">⬇ CSV</button>
+                </div>
+                <div class="flex gap-2 mb-3">
+                    <button onclick="filtrerHistorique('jour')" id="filtreJour"
+                            class="filtre-btn bg-amber-700 text-white text-[10px] px-3 py-1 rounded-full font-bold">Aujourd'hui</button>
+                    <button onclick="filtrerHistorique('mois')" id="filtreMois"
+                            class="filtre-btn bg-slate-700 text-white text-[10px] px-3 py-1 rounded-full font-bold">Ce mois</button>
+                    <button onclick="filtrerHistorique('tout')" id="filtreTout"
+                            class="filtre-btn bg-slate-700 text-white text-[10px] px-3 py-1 rounded-full font-bold">Tout</button>
+                </div>
+                <div id="historiqueVentes" class="space-y-2 max-h-72 overflow-y-auto"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL AJOUT CAISSIER -->
+    <div id="modalAjoutCaissier" class="hidden fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 rounded-2xl p-6 w-full max-w-sm border border-slate-700 shadow-2xl">
+            <h3 class="text-white font-black text-lg mb-4">➕ Nouveau Caissier</h3>
+            <input type="text" id="nouveauCaissierNom" placeholder="Nom complet"
+                   class="w-full bg-slate-800 border border-slate-600 text-white placeholder-slate-500 p-3 rounded-xl mb-3 text-sm outline-none focus:border-amber-500">
+            <input type="tel" id="nouveauCaissierTel" placeholder="Téléphone (optionnel)"
+                   class="w-full bg-slate-800 border border-slate-600 text-white placeholder-slate-500 p-3 rounded-xl mb-3 text-sm outline-none focus:border-amber-500">
+            <input type="password" id="nouveauCaissierPin" placeholder="PIN (4 à 6 chiffres)" maxlength="6" inputmode="numeric"
+                   class="w-full bg-slate-800 border border-slate-600 text-white placeholder-slate-500 p-3 rounded-xl mb-1 text-sm text-center tracking-widest outline-none focus:border-amber-500">
+            <p class="text-slate-500 text-[10px] mb-4 text-center">Évitez : 1234, 0000, 1111…</p>
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="document.getElementById('modalAjoutCaissier').classList.add('hidden')"
+                        class="bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-bold text-sm transition-colors">Annuler</button>
+                <button onclick="creerCaissier()"
+                        class="bg-green-600 hover:bg-green-500 text-white py-3 rounded-xl font-bold text-sm transition-colors">Créer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL RENOUVELLEMENT -->
+    <div id="modalRenouvellement" class="hidden fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4">
+        <div class="bg-slate-900 rounded-2xl p-6 w-full max-w-sm border border-amber-800 shadow-2xl">
+            <h3 class="text-white font-black text-lg text-center mb-1">💳 Renouveler l'abonnement</h3>
+            <p class="text-slate-400 text-xs text-center mb-5">Choisissez votre formule</p>
+            <div class="space-y-2 mb-5">
+                <label class="flex justify-between items-center bg-slate-800 p-3 rounded-xl cursor-pointer border-2 border-transparent has-[:checked]:border-amber-500 transition-colors">
+                    <div><div class="text-white font-bold text-sm">Mensuel</div><div class="text-slate-400 text-xs">30 jours</div></div>
+                    <div class="flex items-center gap-3"><span class="text-amber-400 font-black text-sm">5 000 F</span><input type="radio" name="planRenouvellement" value="mensuel" class="accent-amber-500"></div>
+                </label>
+                <label class="flex justify-between items-center bg-slate-800 p-3 rounded-xl cursor-pointer border-2 border-amber-500 transition-colors">
+                    <div><div class="text-white font-bold text-sm">Trimestriel <span class="text-amber-400 text-[10px]">⭐ Populaire</span></div><div class="text-slate-400 text-xs">90 jours</div></div>
+                    <div class="flex items-center gap-3"><span class="text-amber-400 font-black text-sm">13 500 F</span><input type="radio" name="planRenouvellement" value="trimestriel" checked class="accent-amber-500"></div>
+                </label>
+                <label class="flex justify-between items-center bg-slate-800 p-3 rounded-xl cursor-pointer border-2 border-transparent has-[:checked]:border-amber-500 transition-colors">
+                    <div><div class="text-white font-bold text-sm">Annuel</div><div class="text-slate-400 text-xs">365 jours</div></div>
+                    <div class="flex items-center gap-3"><span class="text-amber-400 font-black text-sm">48 000 F</span><input type="radio" name="planRenouvellement" value="annuel" class="accent-amber-500"></div>
+                </label>
+            </div>
+            <div class="bg-slate-800 rounded-xl p-4 mb-4 text-xs">
+                <p class="text-amber-400 font-bold mb-2">📲 INSTRUCTIONS :</p>
+                <p class="text-white mb-1">1. Envoyez le montant via Orange Money ou Moov Money :</p>
+                <p class="text-amber-400 font-black text-center text-sm my-2">+226 XX XX XX XX</p>
+                <p class="text-white mb-1">2. Référence : <span id="refPaiement" class="font-mono text-amber-400 font-bold"></span></p>
+                <p class="text-slate-400">3. Cliquez "J'ai payé" — validation sous 24h</p>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <button onclick="document.getElementById('modalRenouvellement').classList.add('hidden')"
+                        class="bg-slate-700 hover:bg-slate-600 text-white py-3 rounded-xl font-bold text-sm transition-colors">Annuler</button>
+                <button onclick="soumettreRenouvellement()"
+                        class="bg-amber-600 hover:bg-amber-500 text-white py-3 rounded-xl font-bold text-sm transition-colors">J'ai payé ✓</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ZONE CAISSE -->
+    <div id="caisseContent" class="pointer-events-none opacity-20 transition-opacity duration-500 p-3">
+        <div id="facture-ticket" class="max-w-[80mm] mx-auto bg-white p-3 border-2 border-black shadow-lg">
+
+            <!-- En-tête -->
+            <div class="flex justify-between items-start border-b-2 border-black pb-2 text-[10px]">
+                <div>
+                    <h1 id="factureNom" class="text-base font-black uppercase tracking-tighter leading-none"></h1>
+                    <p id="factureActivite" class="font-bold mt-0.5"></p>
+                    <p id="factureTel" class="font-bold"></p>
+                    <p id="factureAdresse"></p>
+                    <p id="factureVille"></p>
+                    <p id="factureRc" class="text-[8px] text-gray-600"></p>
+                    <p id="factureNif" class="text-[8px] text-gray-600"></p>
+                </div>
+                <div class="border-2 border-black text-center w-24 shrink-0">
+                    <div class="grid grid-cols-3 border-b-2 border-black text-[8px] font-bold bg-gray-100">
+                        <span>J</span><span>M</span><span>A</span>
+                    </div>
+                    <div id="date-display" class="grid grid-cols-3 p-1 font-bold text-[10px]"></div>
+                </div>
+            </div>
+
+            <!-- Numéro & caissier -->
+            <div class="flex justify-between items-center my-2 text-[10px]">
+                <span class="font-bold">Caissier : <span id="nomCaissier">---</span></span>
+                <span class="text-sm font-black italic">N° <span id="factureNumero">FAC-000001</span></span>
+            </div>
+
+            <!-- Tableau -->
+            <table class="w-full border-collapse border-2 border-black text-[11px]">
+                <thead>
+                    <tr class="bg-gray-100 border-b-2 border-black font-black text-[8px] uppercase">
+                        <th class="border-r-2 border-black p-1 text-left">Article</th>
+                        <th class="border-r-2 border-black p-1 w-8 text-center">Qté</th>
+                        <th class="border-r-2 border-black p-1 w-14 text-center">P.U</th>
+                        <th class="p-1 text-right w-16">Total</th>
+                        <th class="no-print w-5"></th>
+                    </tr>
+                </thead>
+                <tbody id="lignes-facture">
+                    <tr class="border-b border-gray-200">
+                        <td class="border-r-2 border-black p-0"><input type="text" class="w-full p-1 uppercase font-bold text-[11px] outline-none" placeholder="Article"></td>
+                        <td class="border-r-2 border-black p-0"><input type="number" class="w-full text-center qte font-bold text-[11px] p-1 outline-none" value="1" min="1" oninput="calculer()"></td>
+                        <td class="border-r-2 border-black p-0"><input type="number" class="w-full text-center pu font-bold text-[11px] p-1 outline-none" placeholder="0" min="0" oninput="calculer()"></td>
+                        <td class="text-right p-1 font-black total-ligne">0</td>
+                        <td class="no-print p-0 w-5"></td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <button onclick="addRow()" class="no-print w-full bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold py-2 mt-2 rounded-lg border border-dashed border-gray-400 transition-colors">
+                + Ajouter une ligne
+            </button>
+
+            <!-- TVA -->
+            <div id="tvaSection" class="hidden mt-2 pt-2 border-t border-gray-200 text-[10px]">
+                <div class="flex justify-between text-gray-600">
+                    <span>TVA (<span id="tvaTaux">0</span>%)</span>
+                    <span id="tvaMontant">0</span>
+                </div>
+            </div>
+
+            <!-- Total -->
+            <div class="mt-3 border-t-2 border-black pt-2">
+                <div class="flex justify-between font-black text-base bg-gray-100 p-2 rounded">
+                    <span>TOTAL NET À PAYER</span>
+                    <span><span id="grandTotal">0</span> F</span>
+                </div>
+                <div id="lettres" class="text-[9px] mt-2 italic uppercase text-gray-600 border-b border-dotted border-gray-400 pb-2">
+                    Arrêté la présente facture à la somme de...
+                </div>
+            </div>
+
+            <!-- Mentions légales -->
+            <div id="mentionsLegales" class="text-[7px] text-center mt-3 text-gray-500 space-y-0.5"></div>
+
+            <!-- Signatures -->
+            <div class="flex justify-between mt-6 text-[9px] font-bold italic uppercase text-gray-600">
+                <span>Le Caissier</span>
+                <span>Le Client</span>
+            </div>
+        </div>
+
+        <!-- Boutons -->
+        <div class="grid grid-cols-2 gap-2 w-full max-w-[80mm] mx-auto mt-4">
+            <button onclick="validerVente()"
+                    class="no-print bg-green-600 hover:bg-green-700 active:scale-95 text-white py-4 rounded-xl font-black shadow-xl flex flex-col items-center justify-center gap-1 transition-all">
+                <span class="text-2xl">✅</span><span class="text-xs">VALIDER</span>
+            </button>
+            <button onclick="validerEtPDF()"
+                    class="no-print bg-purple-600 hover:bg-purple-700 active:scale-95 text-white py-4 rounded-xl font-black shadow-xl flex flex-col items-center justify-center gap-1 transition-all">
+                <span class="text-2xl">📥</span><span class="text-xs">PDF</span>
+            </button>
+        </div>
+        <div class="w-full max-w-[80mm] mx-auto mt-2">
+            <button onclick="partagerWhatsApp()"
+                    class="no-print w-full bg-[#25D366] hover:bg-[#128C7E] active:scale-95 text-white py-3 rounded-xl font-black shadow-xl flex items-center justify-center gap-2 transition-all">
+                <span class="text-xl">📱</span><span class="text-sm">PARTAGER VIA WHATSAPP</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- SCRIPTS -->
+<script src="js/supabase_client.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/sync.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/facture.js"></script>
+<script src="js/app.js"></script>
+<script src="js/dev.js"></script>
+<script>
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then(r => console.log('✅ SW actif:', r.scope))
+                .catch(e => console.warn('SW:', e));
+        });
+    }
+</script>
+</body>
+</html>
